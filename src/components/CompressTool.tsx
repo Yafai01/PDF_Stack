@@ -1,165 +1,176 @@
-import React, { useState } from "react";
-import { Minimize2, Download, Loader2, CheckCircle, Zap } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { Download, Minimize2 } from "lucide-react";
 import type { PdfFileItem } from "../types";
-import { formatBytes, pdfToImages, imagesToPdf, downloadPdfBlob } from "../lib/pdfUtils";
+import { compressPdf, createCanvasJpegReencoder, type CompressResult } from "../lib/pdfCompress";
+import { baseFileName, downloadPdfBlob, errorMessage, formatBytes } from "../lib/pdfUtils";
+import { ActionBar, Alert, Button, Panel, PanelHeader, cx } from "./ui";
 
 interface CompressToolProps {
   fileItems: PdfFileItem[];
 }
 
+type Level = "lossless" | "balanced" | "strong";
+
+const LEVELS: { id: Level; title: string; desc: string; jpeg?: { quality: number; maxDimension: number } }[] = [
+  {
+    id: "lossless",
+    title: "Lossless",
+    desc: "Restructures the file (object streams, deflates uncompressed streams). Content is unchanged.",
+  },
+  {
+    id: "balanced",
+    title: "Balanced",
+    desc: "Lossless steps plus re-encoding JPEG photos at quality 75, max 2000 px.",
+    jpeg: { quality: 0.75, maxDimension: 2000 },
+  },
+  {
+    id: "strong",
+    title: "Strong",
+    desc: "Lossless steps plus re-encoding JPEG photos at quality 55, max 1300 px. Visible softening likely.",
+    jpeg: { quality: 0.55, maxDimension: 1300 },
+  },
+];
+
 export const CompressTool: React.FC<CompressToolProps> = ({ fileItems }) => {
   const activeFile = fileItems[0];
-  const [level, setLevel] = useState<"low" | "medium" | "high">("medium");
+  const [level, setLevel] = useState<Level>("balanced");
+  const [removeMetadata, setRemoveMetadata] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [compressedSize, setCompressedSize] = useState<number | null>(null);
+  const [result, setResult] = useState<CompressResult | null>(null);
+  const [error, setError] = useState("");
+
+  // A new document or new settings invalidate the previous result.
+  useEffect(() => {
+    setResult(null);
+    setError("");
+  }, [activeFile?.id, level, removeMetadata]);
 
   if (!activeFile) return null;
 
+  const outputName = `${baseFileName(activeFile.name)}_compressed.pdf`;
+
   const handleCompress = async () => {
     setIsProcessing(true);
-    setCompressedSize(null);
-
+    setResult(null);
+    setError("");
     try {
-      // Scale factor & image compression based on selected level
-      const scaleMap = { low: 1.2, medium: 0.9, high: 0.65 };
-      const scale = scaleMap[level];
-
-      // Extract canvas rendered image pages
-      const pageImages = await pdfToImages(activeFile.arrayBuffer, scale);
-
-      // Convert data URLs to synthetic File objects for re-encoding
-      const imageFiles: File[] = [];
-      for (const item of pageImages) {
-        const res = await fetch(item.dataUrl);
-        const blob = await res.blob();
-        imageFiles.push(new File([blob], `page_${item.pageIndex}.png`, { type: "image/png" }));
-      }
-
-      // Recompile into optimized PDF
-      const compressedBytes = await imagesToPdf(imageFiles, {
-        pageSize: "fit",
-        orientation: "auto",
-        marginPt: 0,
-        fitMode: "contain",
+      const preset = LEVELS.find((l) => l.id === level)!;
+      const res = await compressPdf(activeFile.arrayBuffer, {
+        removeMetadata,
+        reencodeJpeg: preset.jpeg ? createCanvasJpegReencoder(preset.jpeg.quality, preset.jpeg.maxDimension) : undefined,
       });
-
-      setCompressedSize(compressedBytes.byteLength);
-
-      const baseName = activeFile.name.replace(/\.pdf$/i, "");
-      downloadPdfBlob(compressedBytes, `${baseName}_Compressed.pdf`);
+      setResult(res);
     } catch (err) {
-      console.error("Compression error:", err);
-      alert("Failed to compress PDF.");
+      setError(errorMessage(err, "Could not compress this PDF."));
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const getEstRatio = () => {
-    if (level === "low") return "~15-30% reduction";
-    if (level === "medium") return "~40-60% reduction";
-    return "~70-85% reduction";
-  };
+  const savedPct = result ? ((result.originalSize - result.outputSize) / result.originalSize) * 100 : 0;
 
   return (
-    <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-xs mb-8">
-      <div className="pb-4 border-b border-slate-100 mb-5">
-        <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
-          <Minimize2 className="w-5 h-5 text-rose-600" /> Compress & Optimize PDF
-        </h2>
-        <p className="text-xs text-slate-500 mt-0.5">
-          Shrink file sizes for fast web uploads, email attachments, or archiving without sacrificing readability.
-        </p>
+    <Panel>
+      <PanelHeader
+        title="Compress PDF"
+        description="Text and vector graphics are kept as-is (never rasterised). How much a file shrinks depends on its content; already-optimised PDFs may not get smaller."
+      />
+
+      <fieldset>
+        <legend className="text-sm font-medium text-slate-700 mb-2">Compression level</legend>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {LEVELS.map((item) => (
+            <label
+              key={item.id}
+              className={cx(
+                "flex flex-col gap-1 p-4 rounded-lg border cursor-pointer transition-colors",
+                level === item.id ? "border-blue-500 bg-blue-50/50 ring-1 ring-blue-500" : "border-slate-200 hover:bg-slate-50"
+              )}
+            >
+              <span className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="compress-level"
+                  value={item.id}
+                  checked={level === item.id}
+                  onChange={() => setLevel(item.id)}
+                  className="accent-blue-600"
+                  id={`btn-compress-level-${item.id}`}
+                />
+                <span className="text-sm font-medium text-slate-900">{item.title}</span>
+              </span>
+              <span className="text-xs text-slate-500 leading-relaxed">{item.desc}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      <label className="mt-4 flex items-center gap-2.5 text-sm text-slate-700 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={removeMetadata}
+          onChange={(e) => setRemoveMetadata(e.target.checked)}
+          className="w-4 h-4 accent-blue-600"
+        />
+        Remove document metadata (title, author, creator, XMP)
+      </label>
+
+      <dl className="mt-5 grid grid-cols-2 gap-3">
+        <div className="rounded-lg border border-slate-200 p-4">
+          <dt className="text-xs text-slate-500">Original size</dt>
+          <dd className="text-lg font-semibold text-slate-900 tabular-nums">{formatBytes(activeFile.size)}</dd>
+        </div>
+        <div className="rounded-lg border border-slate-200 p-4">
+          <dt className="text-xs text-slate-500">Compressed size</dt>
+          <dd className="text-lg font-semibold text-slate-900 tabular-nums">
+            {result ? formatBytes(result.outputSize) : <span className="text-slate-400 font-normal text-sm">Not run yet</span>}
+          </dd>
+        </div>
+      </dl>
+
+      <div className="mt-4 space-y-3" aria-live="polite">
+        {error && <Alert tone="error">{error}</Alert>}
+        {result && result.isSmaller && (
+          <Alert tone="success">
+            Saved {formatBytes(result.originalSize - result.outputSize)} ({savedPct.toFixed(1)}% smaller).{" "}
+            {result.imagesReencoded > 0 && `${result.imagesReencoded} image(s) re-encoded. `}
+            {result.streamsDeflated > 0 && `${result.streamsDeflated} uncompressed stream(s) deflated.`}
+          </Alert>
+        )}
+        {result && !result.isSmaller && (
+          <Alert tone="warning">
+            This PDF is already well optimised: the result would be {formatBytes(result.outputSize)}, which is not
+            smaller than the original. Keep your original file{level !== "strong" ? ", or try a stronger level" : ""}.
+          </Alert>
+        )}
       </div>
 
-      {/* File Size Comparison Card */}
-      <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl mb-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div>
-          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
-            Original File Size
-          </span>
-          <span className="text-lg font-bold text-slate-900">{formatBytes(activeFile.size)}</span>
-        </div>
-
-        <Zap className="w-6 h-6 text-rose-500 hidden sm:block" />
-
-        <div className="text-right">
-          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
-            Estimated Reduction
-          </span>
-          <span className="text-sm font-bold text-rose-600">{getEstRatio()}</span>
-          {compressedSize && (
-            <span className="text-xs text-emerald-600 font-semibold block mt-0.5">
-              Actual Output: {formatBytes(compressedSize)}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Preset Selector Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
-        {[
-          {
-            id: "low",
-            title: "Less Compression",
-            desc: "Highest visual quality with minor size optimization.",
-            badge: "High Quality",
-          },
-          {
-            id: "medium",
-            title: "Recommended",
-            desc: "Optimal balance between small file size and clear document quality.",
-            badge: "Balanced",
-          },
-          {
-            id: "high",
-            title: "Maximum Compression",
-            desc: "Smallest possible file size for strict upload limits.",
-            badge: "Smallest Size",
-          },
-        ].map((item) => (
-          <button
-            key={item.id}
-            onClick={() => setLevel(item.id as any)}
-            id={`btn-compress-level-${item.id}`}
-            className={`p-4 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
-              level === item.id
-                ? "bg-rose-50/70 border-rose-500 ring-2 ring-rose-500/20 shadow-xs"
-                : "bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-            }`}
+      <ActionBar>
+        {result && !result.isSmaller && (
+          <Button variant="secondary" onClick={() => downloadPdfBlob(result.bytes, outputName)}>
+            Download anyway
+          </Button>
+        )}
+        {result && result.isSmaller ? (
+          <Button
+            variant="primary"
+            icon={<Download className="w-4 h-4" aria-hidden="true" />}
+            onClick={() => downloadPdfBlob(result.bytes, outputName)}
           >
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs font-bold text-slate-900">{item.title}</span>
-                {level === item.id && <CheckCircle className="w-4 h-4 text-rose-600" />}
-              </div>
-              <p className="text-[11px] text-slate-500 leading-relaxed mb-3">{item.desc}</p>
-            </div>
-            <span className="inline-block px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-semibold self-start">
-              {item.badge}
-            </span>
-          </button>
-        ))}
-      </div>
-
-      <div className="pt-4 border-t border-slate-100 flex justify-end">
-        <button
-          onClick={handleCompress}
-          disabled={isProcessing}
-          id="btn-execute-compress"
-          className="px-5 py-2.5 rounded-xl bg-rose-600 text-white text-xs font-semibold shadow-sm hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 cursor-pointer"
-        >
-          {isProcessing ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" /> Optimizing PDF Pages...
-            </>
-          ) : (
-            <>
-              <Download className="w-4 h-4" /> Compress & Download PDF
-            </>
-          )}
-        </button>
-      </div>
-    </div>
+            Download compressed PDF
+          </Button>
+        ) : (
+          <Button
+            variant="primary"
+            onClick={handleCompress}
+            loading={isProcessing}
+            icon={<Minimize2 className="w-4 h-4" aria-hidden="true" />}
+            id="btn-execute-compress"
+          >
+            {isProcessing ? "Compressing" : "Compress"}
+          </Button>
+        )}
+      </ActionBar>
+    </Panel>
   );
 };
