@@ -1,16 +1,25 @@
 import React, { useState } from "react";
-import { Stamp, Download, Loader2, Image as ImageIcon, Type, Sparkles } from "lucide-react";
+import { Stamp, Image as ImageIcon, Type } from "lucide-react";
 import type { PdfFileItem, WatermarkConfig } from "../types";
-import { addWatermarkToPdf, downloadPdfBlob } from "../lib/pdfUtils";
+import { addWatermarkToPdf, downloadPdfBlob, baseFileName, errorMessage } from "../lib/pdfUtils";
+import { ActionBar, Alert, Button, Label, Panel, PanelHeader, Section, Segmented, inputClass } from "./ui";
 
 interface WatermarkToolProps {
   fileItems: PdfFileItem[];
 }
 
+const POSITIONS: { value: WatermarkConfig["position"]; label: string }[] = [
+  { value: "center", label: "Center" },
+  { value: "diagonal", label: "Diagonal" },
+  { value: "top-left", label: "Top left" },
+  { value: "bottom-right", label: "Bottom right" },
+  { value: "grid", label: "Tiled" },
+];
+
 export const WatermarkTool: React.FC<WatermarkToolProps> = ({ fileItems }) => {
   const activeFile = fileItems[0];
   const [isProcessing, setIsProcessing] = useState(false);
-
+  const [error, setError] = useState("");
   const [config, setConfig] = useState<WatermarkConfig>({
     type: "text",
     text: "CONFIDENTIAL",
@@ -25,264 +34,207 @@ export const WatermarkTool: React.FC<WatermarkToolProps> = ({ fileItems }) => {
   if (!activeFile) return null;
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setConfig((prev) => ({
-          ...prev,
-          type: "image",
-          imageFile: file,
-          imageDataUrl: event.target?.result as string,
-        }));
-      };
-      reader.readAsDataURL(file);
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!["image/png", "image/jpeg"].includes(file.type)) {
+      setError("Use a PNG or JPEG image for the watermark.");
+      return;
     }
+    setError("");
+    const reader = new FileReader();
+    reader.onload = (event) =>
+      setConfig((prev) => ({ ...prev, type: "image", imageFile: file, imageDataUrl: event.target?.result as string }));
+    reader.readAsDataURL(file);
   };
 
-  const handleApplyWatermark = async () => {
+  const handleApply = async () => {
     setIsProcessing(true);
+    setError("");
     try {
-      const watermarkedBytes = await addWatermarkToPdf(activeFile.arrayBuffer, config);
-      const baseName = activeFile.name.replace(/\.pdf$/i, "");
-      downloadPdfBlob(watermarkedBytes, `${baseName}_Watermarked.pdf`);
+      const bytes = await addWatermarkToPdf(activeFile.arrayBuffer, config);
+      downloadPdfBlob(bytes, `${baseFileName(activeFile.name)}_watermarked.pdf`);
     } catch (err) {
-      console.error("Watermark generation failed:", err);
-      alert("Failed to apply watermark to PDF.");
+      setError(errorMessage(err, "Could not add the watermark."));
     } finally {
       setIsProcessing(false);
     }
   };
 
   const previewThumb = activeFile.pageThumbnails[0];
+  const previewRotation = config.position === "diagonal" ? -Math.atan2(1.4, 1) * (180 / Math.PI) : -config.rotationDegrees;
+  const previewAlign =
+    config.position === "top-left"
+      ? "items-start justify-start"
+      : config.position === "bottom-right"
+      ? "items-end justify-end"
+      : "items-center justify-center";
+
+  const set = <K extends keyof WatermarkConfig>(key: K, value: WatermarkConfig[K]) =>
+    setConfig((prev) => ({ ...prev, [key]: value }));
 
   return (
-    <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-xs mb-8">
-      <div className="pb-4 border-b border-slate-100 mb-5">
-        <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
-          <Stamp className="w-5 h-5 text-purple-600" /> Add Watermark to PDF
-        </h2>
-        <p className="text-xs text-slate-500 mt-0.5">
-          Stamp text or image watermarks onto all pages with custom opacity, rotation, and alignment.
-        </p>
-      </div>
+    <Panel>
+      <PanelHeader title="Watermark settings" description="The watermark is drawn on every page of the document." />
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left: Configuration Form */}
         <div className="lg:col-span-7 space-y-4">
-          {/* Watermark Type Selector */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => setConfig((prev) => ({ ...prev, type: "text" }))}
-              id="btn-watermark-type-text"
-              className={`flex-1 py-2 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                config.type === "text"
-                  ? "bg-purple-50 border-purple-500 text-purple-700 shadow-2xs"
-                  : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
-              }`}
-            >
-              <Type className="w-4 h-4" /> Text Watermark
-            </button>
-            <button
-              onClick={() => setConfig((prev) => ({ ...prev, type: "image" }))}
-              id="btn-watermark-type-image"
-              className={`flex-1 py-2 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                config.type === "image"
-                  ? "bg-purple-50 border-purple-500 text-purple-700 shadow-2xs"
-                  : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
-              }`}
-            >
-              <ImageIcon className="w-4 h-4" /> Logo / Image Stamp
-            </button>
-          </div>
+          <Segmented
+            label="Watermark type"
+            value={config.type}
+            onChange={(v) => set("type", v)}
+            options={[
+              { value: "text", label: <><Type className="w-4 h-4" aria-hidden="true" /> Text</> },
+              { value: "image", label: <><ImageIcon className="w-4 h-4" aria-hidden="true" /> Image</> },
+            ]}
+          />
 
           {config.type === "text" ? (
-            <div className="space-y-3 bg-slate-50 border border-slate-200/80 p-4 rounded-xl">
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">Watermark Text:</label>
-                <input
-                  type="text"
-                  value={config.text}
-                  onChange={(e) => setConfig((prev) => ({ ...prev, text: e.target.value }))}
-                  placeholder="e.g. CONFIDENTIAL, DRAFT, APPROVED"
-                  id="input-watermark-text"
-                  className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 font-semibold text-slate-800"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
+            <Section>
+              <div className="space-y-4">
                 <div>
-                  <label className="text-xs font-semibold text-slate-700 block mb-1">
-                    Font Size ({config.fontSize}px):
-                  </label>
+                  <Label htmlFor="input-watermark-text">Text</Label>
                   <input
-                    type="range"
-                    min="18"
-                    max="96"
-                    value={config.fontSize}
-                    onChange={(e) =>
-                      setConfig((prev) => ({ ...prev, fontSize: parseInt(e.target.value) }))
-                    }
-                    id="slider-watermark-fontsize"
-                    className="w-full accent-purple-600 cursor-pointer"
+                    id="input-watermark-text"
+                    type="text"
+                    value={config.text}
+                    onChange={(e) => set("text", e.target.value)}
+                    placeholder="e.g. CONFIDENTIAL, DRAFT"
+                    className={inputClass}
                   />
+                  <p className="text-xs text-slate-500 mt-1">Latin characters only (built-in PDF font).</p>
                 </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-slate-700 block mb-1">Text Color:</label>
-                  <div className="flex items-center gap-2">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="slider-watermark-fontsize">Font size: {config.fontSize} pt</Label>
                     <input
-                      type="color"
-                      value={config.colorHex}
-                      onChange={(e) => setConfig((prev) => ({ ...prev, colorHex: e.target.value }))}
-                      id="input-watermark-color"
-                      className="w-8 h-8 rounded border border-slate-300 cursor-pointer p-0"
+                      id="slider-watermark-fontsize"
+                      type="range"
+                      min="18"
+                      max="96"
+                      value={config.fontSize}
+                      onChange={(e) => set("fontSize", parseInt(e.target.value, 10))}
+                      className="w-full accent-blue-600"
                     />
-                    <span className="text-xs font-mono text-slate-600">{config.colorHex}</span>
+                  </div>
+                  <div>
+                    <Label htmlFor="input-watermark-color">Colour</Label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        id="input-watermark-color"
+                        type="color"
+                        value={config.colorHex}
+                        onChange={(e) => set("colorHex", e.target.value)}
+                        className="w-9 h-9 rounded border border-slate-300 cursor-pointer p-0.5 bg-white"
+                      />
+                      <span className="text-sm font-mono text-slate-600">{config.colorHex}</span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            </Section>
           ) : (
-            <div className="space-y-3 bg-slate-50 border border-slate-200/80 p-4 rounded-xl text-center">
-              <label className="text-xs font-semibold text-slate-700 block mb-1">Upload Logo Image (PNG / JPG):</label>
+            <Section>
+              <Label htmlFor="input-watermark-image">Image (PNG or JPEG)</Label>
               <input
+                id="input-watermark-image"
                 type="file"
                 accept="image/png, image/jpeg"
                 onChange={handleImageUpload}
-                id="input-watermark-image"
-                className="text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-purple-100 file:text-purple-700 hover:file:bg-purple-200 cursor-pointer"
+                className="block text-sm text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border file:border-slate-300 file:bg-white file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-50 cursor-pointer"
               />
-              {config.imageDataUrl && (
-                <p className="text-[11px] text-emerald-600 font-medium">✓ Image loaded successfully</p>
-              )}
-            </div>
+              {config.imageDataUrl && <p className="text-xs text-slate-500 mt-2">Image loaded.</p>}
+            </Section>
           )}
 
-          {/* Opacity, Rotation, and Alignment */}
-          <div className="space-y-3 bg-slate-50 border border-slate-200/80 p-4 rounded-xl">
-            <div className="grid grid-cols-2 gap-3">
+          <Section>
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
-                  Opacity ({Math.round(config.opacity * 100)}%):
-                </label>
+                <Label htmlFor="slider-watermark-opacity">Opacity: {Math.round(config.opacity * 100)}%</Label>
                 <input
+                  id="slider-watermark-opacity"
                   type="range"
                   min="0.1"
-                  max="1.0"
+                  max="1"
                   step="0.05"
                   value={config.opacity}
-                  onChange={(e) =>
-                    setConfig((prev) => ({ ...prev, opacity: parseFloat(e.target.value) }))
-                  }
-                  id="slider-watermark-opacity"
-                  className="w-full accent-purple-600 cursor-pointer"
+                  onChange={(e) => set("opacity", parseFloat(e.target.value))}
+                  className="w-full accent-blue-600"
                 />
               </div>
-
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
-                  Rotation ({config.rotationDegrees}°):
-                </label>
+                <Label htmlFor="slider-watermark-rotation">
+                  Rotation: {config.position === "diagonal" ? "follows page diagonal" : `${config.rotationDegrees}°`}
+                </Label>
                 <input
+                  id="slider-watermark-rotation"
                   type="range"
                   min="-90"
                   max="90"
                   value={config.rotationDegrees}
-                  onChange={(e) =>
-                    setConfig((prev) => ({ ...prev, rotationDegrees: parseInt(e.target.value) }))
-                  }
-                  id="slider-watermark-rotation"
-                  className="w-full accent-purple-600 cursor-pointer"
+                  disabled={config.position === "diagonal"}
+                  onChange={(e) => set("rotationDegrees", parseInt(e.target.value, 10))}
+                  className="w-full accent-blue-600 disabled:opacity-40"
                 />
               </div>
             </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">Position Layout:</label>
-              <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 text-[11px]">
-                {(["center", "diagonal", "top-left", "bottom-right", "grid"] as const).map((pos) => (
-                  <button
-                    key={pos}
-                    onClick={() => setConfig((prev) => ({ ...prev, position: pos }))}
-                    id={`btn-position-${pos}`}
-                    className={`py-1.5 px-2 rounded-lg border capitalize font-medium cursor-pointer transition-all ${
-                      config.position === pos
-                        ? "bg-purple-600 text-white border-purple-600 shadow-2xs font-semibold"
-                        : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
-                    }`}
-                  >
-                    {pos.replace("-", " ")}
-                  </button>
-                ))}
-              </div>
+            <div className="mt-4">
+              <span className="block text-sm font-medium text-slate-700 mb-1.5">Position</span>
+              <Segmented label="Position" value={config.position} onChange={(v) => set("position", v)} options={POSITIONS} />
             </div>
-          </div>
+          </Section>
         </div>
 
-        {/* Right: Live Visual Preview */}
-        <div className="lg:col-span-5 flex flex-col items-center justify-between bg-slate-100/70 border border-slate-200 p-4 rounded-xl">
-          <span className="text-xs font-semibold text-slate-600 mb-2">Live Page Overlay Preview</span>
-
-          <div className="relative w-full max-w-[220px] aspect-[1/1.4] bg-white rounded-lg border border-slate-300 shadow-md overflow-hidden flex items-center justify-center p-2">
+        <div className="lg:col-span-5 flex flex-col items-center rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <span className="text-sm text-slate-600 mb-3">Approximate preview (page 1)</span>
+          <div className="relative w-full max-w-[240px] aspect-[1/1.4] bg-white rounded border border-slate-300 overflow-hidden">
             {previewThumb ? (
-              <img src={previewThumb} alt="Page Preview" className="w-full h-full object-contain" />
+              <img src={previewThumb} alt="Page 1 preview" className="w-full h-full object-contain" />
             ) : (
-              <div className="text-xs text-slate-400 font-mono text-center">Page 1</div>
+              <div className="w-full h-full flex items-center justify-center text-xs text-slate-400">No preview</div>
             )}
-
-            {/* Overlaid simulated watermark */}
-            <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-4">
+            <div className={`absolute inset-0 pointer-events-none flex p-3 ${previewAlign}`} aria-hidden="true">
               {config.type === "text" && config.text ? (
-                <div
+                <span
                   style={{
                     color: config.colorHex,
                     opacity: config.opacity,
-                    transform: `rotate(${config.rotationDegrees}deg)`,
-                    fontSize: `${Math.max(12, config.fontSize / 3.5)}px`,
+                    transform: `rotate(${previewRotation}deg)`,
+                    fontSize: `${Math.max(9, config.fontSize / 3.2)}px`,
                   }}
-                  className="font-bold tracking-wider text-center select-none"
+                  className="font-bold whitespace-nowrap"
                 >
                   {config.text}
-                </div>
+                </span>
               ) : config.type === "image" && config.imageDataUrl ? (
                 <img
                   src={config.imageDataUrl}
-                  alt="Watermark Logo"
-                  style={{
-                    opacity: config.opacity,
-                    transform: `rotate(${config.rotationDegrees}deg)`,
-                  }}
-                  className="max-w-[60%] max-h-[60%] object-contain"
+                  alt=""
+                  style={{ opacity: config.opacity, transform: `rotate(${previewRotation}deg)` }}
+                  className="max-w-[40%] max-h-[40%] object-contain"
                 />
               ) : null}
             </div>
           </div>
-
-          <p className="text-[11px] text-slate-400 mt-3 text-center">
-            Watermark will be rendered across all {activeFile.pageCount} pages.
-          </p>
         </div>
       </div>
 
-      <div className="pt-4 border-t border-slate-100 mt-6 flex justify-end">
-        <button
-          onClick={handleApplyWatermark}
-          disabled={isProcessing}
+      {error && (
+        <Alert tone="error" className="mt-4">
+          {error}
+        </Alert>
+      )}
+
+      <ActionBar>
+        <Button
+          variant="primary"
+          onClick={handleApply}
+          loading={isProcessing}
+          icon={<Stamp className="w-4 h-4" aria-hidden="true" />}
           id="btn-execute-watermark"
-          className="px-5 py-2.5 rounded-xl bg-purple-600 text-white text-xs font-semibold shadow-sm hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 cursor-pointer"
         >
-          {isProcessing ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" /> Watermarking Document...
-            </>
-          ) : (
-            <>
-              <Download className="w-4 h-4" /> Apply & Download Watermarked PDF
-            </>
-          )}
-        </button>
-      </div>
-    </div>
+          {isProcessing ? "Applying" : "Apply and download"}
+        </Button>
+      </ActionBar>
+    </Panel>
   );
 };

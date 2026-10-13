@@ -1,87 +1,105 @@
-# PDF Tool Studio Pro
+# PDF Stack
 
-An all-in-one, privacy-focused, client-side PDF editing & document intelligence suite powered by **pdf-lib**, **pdfjs-dist**, and **Google Gemini AI**.
+A browser-based PDF toolkit: merge, split, organise, watermark, number, sign, compress, convert and password-protect PDFs, with optional AI summaries via Google Gemini.
 
----
+All PDF processing runs locally in the browser with [pdf-lib](https://github.com/cantoo-scribe/pdf-lib) and [PDF.js](https://mozilla.github.io/pdf.js/). Files are never uploaded, except when you use **AI insights**, which sends the document text (or the PDF itself if it has no text layer) to this app's server, which forwards it to the Gemini API.
 
-## ✨ Features
+## Features
 
-- 📑 **Merge PDFs**: Combine multiple PDF files into a single ordered document.
-- ✂️ **Split PDF**: Separate pages into individual files or extract custom page ranges.
-- 🔄 **Organize & Rotate**: Visual page reordering, page deletion, and 90°/180°/270° rotation.
-- 🔖 **Watermark**: Stamp custom text or brand logos with adjustable opacity, scale, and angle.
-- 🔢 **Page Numbers**: Add headers, footers, or dynamic page numbering (`Page X of Y`).
-- ⚡ **Compress PDF**: Optimize and shrink PDF file sizes for web, email attachments, or archiving.
-- ✍️ **Digital Signatures**: Draw, type, or upload signatures and stamp them onto any page.
-- 🖼️ **Images to PDF**: Convert PNG, JPG, or WebP photos into a clean PDF document.
-- 📷 **PDF to PNG**: Render and export high-resolution PNG page images.
-- 🔒 **Password Protect & Encrypt**: Apply security restrictions, user/owner passwords, and permissions.
-- 🧠 **AI Document Intelligence**:
-  - **Executive Summaries**: Instant bullet points and key takeaways powered by Gemini AI.
-  - **Structured Key Insights**: Automatically extract entities, dates, categories, and financial metrics.
-  - **Interactive Document Q&A**: Ask any question directly to your document context.
+| Tool | What it does |
+| --- | --- |
+| Merge | Combine several PDFs, reorder them and optionally pick page ranges per file. |
+| Split / extract | Extract a page range (`1-3, 5`) or hand-picked pages into a new PDF. |
+| Organize pages | Reorder, rotate, duplicate or delete pages. |
+| Watermark | Text or PNG/JPEG image watermark: centred, diagonal, corner or tiled. |
+| Page numbers | `Page X of Y`, `Page X`, `X / Y` or a custom pattern with `{page}` / `{total}`. |
+| Sign | Draw, type or upload a signature image and place it on a page. |
+| Compress | Restructures the PDF (object streams, deflates uncompressed streams, optional metadata removal) and can re-encode JPEG images. Shows the real before/after size. |
+| Images to PDF | PNG, JPEG or WebP images to a PDF (A4, Letter or image size). |
+| PDF to PNG | Render each page as a PNG at 72 to 216 dpi. |
+| Password protect | AES-256 encryption (PDF 2.0 standard security handler) with an open password, an optional owner password and print/copy/edit permissions. |
+| AI insights | Summary, key-detail extraction and Q&A through Google Gemini (requires `GEMINI_API_KEY` on the server). |
 
----
+## Limitations
 
-## 🔒 Privacy First
+- **Sign** places an image of your signature. It is not a cryptographic (certificate-based) digital signature.
+- **Compress** never rasterises pages, so it keeps text searchable, but results depend on the file. PDFs that are already optimised may not get smaller; the app then says so and recommends keeping the original. Only plain RGB/Gray JPEG images are re-encoded; CMYK, ICC-based and other image types are left untouched.
+- **Password protect**: the open password is real encryption. Permission flags (printing, copying, editing) are honoured by mainstream readers but are advisory by design in the PDF format.
+- Password-protected PDFs cannot be used as input to the other tools; remove the password in a PDF reader first.
+- Watermark and page-number text use the built-in Helvetica font, so only Latin (WinAnsi) characters are supported.
+- Page previews are rendered for the first 30 pages of each document; later pages show a placeholder.
+- Everything is held in browser memory, so very large PDFs (hundreds of MB) can be slow or fail.
+- AI output can be wrong; verify important details. AI insights is unavailable without a Gemini API key.
 
-All PDF document transformations (merging, splitting, rotating, watermarking, signing, and compressing) run **100% locally in your browser** using WebAssembly and client-side JavaScript. Your documents never leave your device except when explicitly requesting AI processing via server-proxied Gemini API calls.
+## Tech stack
 
----
+- React 19, TypeScript, Tailwind CSS 4, lucide-react icons
+- `@cantoo/pdf-lib` (maintained pdf-lib fork with encryption support), `pdfjs-dist` 6
+- Node.js / Express server: serves the app and proxies Gemini calls (`@google/genai`)
+- Vite 6, esbuild, Vitest
 
-## 🚀 Tech Stack
+## Project structure
 
-- **Frontend**: React 18, TypeScript, Tailwind CSS, Lucide Icons
-- **PDF Engine**: `pdf-lib`, `pdfjs-dist` (PDF.js canvas rendering)
-- **AI Backend**: Node.js / Express with `@google/genai` (Gemini Flash)
-- **Build Tooling**: Vite, esbuild, TypeScript
+```
+server.ts                 Entry point: dev (Vite middleware) or production (static dist/) server
+server/app.ts             Express app: /api/health and the Gemini proxy routes
+src/App.tsx               Layout, tool navigation, shared document list
+src/components/           One component per tool, plus ui.tsx (shared UI primitives)
+src/lib/pdfOps.ts         Pure pdf-lib operations (merge, split, watermark, ...)
+src/lib/pdfSecurity.ts    AES-256 encryption
+src/lib/pdfCompress.ts    Compression
+src/lib/pdfUtils.ts       Browser-only helpers (PDF.js rendering, downloads)
+tests/                    Vitest unit and API tests
+```
 
----
+## Prerequisites
 
-## 💻 Getting Started Locally
+- Node.js 20 or newer (developed with Node 24)
+- npm
 
-### Prerequisites
+## Setup
 
-- Node.js (v18 or higher)
-- npm or yarn
+```bash
+git clone https://github.com/Yafai01/PDF_Stack.git
+cd PDF_Stack
+npm ci
+cp .env.example .env   # optional, only needed for AI insights
+```
 
-### Installation
+### Environment variables
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/your-username/pdf-tool-studio.git
-   cd pdf-tool-studio
-   ```
+| Variable | Required | Description |
+| --- | --- | --- |
+| `GEMINI_API_KEY` | No | Google Gemini API key. Only read by the server and never sent to the browser. Without it, AI insights returns a "not configured" message and every other tool works normally. |
+| `GEMINI_MODEL` | No | Gemini model id. Default: `gemini-3.6-flash`. |
+| `PORT` | No | Server port. Default: `3000`. |
+| `HOST` | No | Bind address. Default: `127.0.0.1` in development, `0.0.0.0` in production. |
 
-2. **Install dependencies:**
-   ```bash
-   npm install
-   ```
+Never commit `.env`; it is git-ignored.
 
-3. **Configure Environment Variables:**
-   Copy `.env.example` to `.env` and add your Gemini API key (optional, for AI features):
-   ```bash
-   cp .env.example .env
-   ```
-   In `.env`:
-   ```env
-   GEMINI_API_KEY=your_gemini_api_key_here
-   ```
+## Commands
 
-4. **Run Development Server:**
-   ```bash
-   npm run dev
-   ```
-   Open [http://localhost:3000](http://localhost:3000) in your browser.
+| Command | Description |
+| --- | --- |
+| `npm run dev` | Start the dev server (Express + Vite middleware) on http://localhost:3000 |
+| `npm run build` | Build the client to `dist/` and the server to `build/server.cjs` |
+| `npm start` | Run the production server (after `npm run build`) |
+| `npm run typecheck` | TypeScript type check (`npm run lint` runs the same check) |
+| `npm test` | Run the Vitest suite |
 
-5. **Build for Production:**
-   ```bash
-   npm run build
-   npm start
-   ```
+## Tests
 
----
+`npm test` covers:
 
-## 📄 License
+- encryption: the output cannot be opened without the password, opens with the user and owner passwords, and carries the requested permissions (verified by re-opening with PDF.js, an independent implementation);
+- compression: real size reporting, text preserved, metadata removal, image re-encoding rules;
+- PDF operations: page-range parsing, merge, split, page numbering, encrypted-input handling;
+- the API: missing-key handling, input validation, and that upstream error details are not leaked.
 
-MIT License. Free to use, modify, and distribute.
+## Deployment
+
+Build with `npm run build`, then run `npm start` (or `node build/server.cjs --production`) with `GEMINI_API_KEY` set in the environment if you want AI insights. The server serves `dist/` and the `/api` routes from one process. Put it behind HTTPS; the AI routes have no authentication or rate limiting, so anyone who can reach the server can spend your Gemini quota.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

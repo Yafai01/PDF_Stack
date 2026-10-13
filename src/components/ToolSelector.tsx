@@ -2,176 +2,86 @@ import React from "react";
 import {
   Combine,
   Scissors,
-  RotateCw,
+  LayoutGrid,
   Stamp,
   Hash,
   Minimize2,
-  FileSignature,
+  PenLine,
   Image,
   FileImage,
   Lock,
   Sparkles,
+  type LucideIcon,
 } from "lucide-react";
-import type { PdfToolCategory, ToolMeta } from "../types";
+import type { PdfToolCategory, ToolGroup, ToolMeta } from "../types";
+import { cx } from "./ui";
 
 export const TOOLS: ToolMeta[] = [
-  {
-    id: "merge",
-    name: "Merge",
-    shortDesc: "Combine multiple PDF files into one document.",
-    iconName: "Combine",
-    color: "bg-blue-50 text-blue-600 border-blue-100",
-  },
-  {
-    id: "split",
-    name: "Split",
-    shortDesc: "Separate pages or extract specific page ranges.",
-    iconName: "Scissors",
-    color: "bg-orange-50 text-orange-600 border-orange-100",
-  },
-  {
-    id: "reorder",
-    name: "Organize",
-    shortDesc: "Reorder, rotate, or delete individual pages visually.",
-    iconName: "RotateCw",
-    color: "bg-amber-50 text-amber-600 border-amber-100",
-  },
-  {
-    id: "watermark",
-    name: "Watermark",
-    shortDesc: "Stamp custom text or brand logos with opacity.",
-    iconName: "Stamp",
-    color: "bg-purple-50 text-purple-600 border-purple-100",
-  },
-  {
-    id: "page-numbers",
-    name: "Numbering",
-    shortDesc: "Add headers, footers, or 'Page X of Y' numbers.",
-    iconName: "Hash",
-    color: "bg-cyan-50 text-cyan-600 border-cyan-100",
-  },
-  {
-    id: "compress",
-    name: "Compress",
-    shortDesc: "Reduce PDF file size for fast web & email upload.",
-    iconName: "Minimize2",
-    color: "bg-green-50 text-green-600 border-green-100",
-  },
-  {
-    id: "sign",
-    name: "Sign",
-    shortDesc: "Draw or upload digital signatures onto any page.",
-    iconName: "FileSignature",
-    color: "bg-violet-50 text-violet-600 border-violet-100",
-  },
-  {
-    id: "img-to-pdf",
-    name: "Img to PDF",
-    shortDesc: "Convert PNG, JPG, or WebP photos into a PDF.",
-    iconName: "Image",
-    color: "bg-sky-50 text-sky-600 border-sky-100",
-  },
-  {
-    id: "pdf-to-img",
-    name: "PDF to PNG",
-    shortDesc: "Export PDF pages as high-resolution PNG images.",
-    iconName: "FileImage",
-    color: "bg-teal-50 text-teal-600 border-teal-100",
-  },
-  {
-    id: "protect",
-    name: "Encrypt",
-    shortDesc: "Set password security and document restriction.",
-    iconName: "Lock",
-    color: "bg-slate-100 text-slate-700 border-slate-200",
-  },
-  {
-    id: "ai-assistant",
-    name: "AI Insights",
-    shortDesc: "Summarize, extract key data, or ask questions with AI.",
-    iconName: "Sparkles",
-    badge: "Gemini",
-    color: "bg-indigo-50 text-indigo-600 border-indigo-100",
-  },
+  { id: "merge", name: "Merge", group: "Organize", multiFile: true, shortDesc: "Combine several PDFs into one document, optionally picking page ranges." },
+  { id: "split", name: "Split / extract", group: "Organize", shortDesc: "Extract a page range or hand-picked pages into a new PDF." },
+  { id: "reorder", name: "Organize pages", group: "Organize", shortDesc: "Reorder, rotate, duplicate or delete pages." },
+  { id: "watermark", name: "Watermark", group: "Edit", shortDesc: "Stamp text or an image on every page." },
+  { id: "page-numbers", name: "Page numbers", group: "Edit", shortDesc: "Add page numbers or a custom footer/header label." },
+  { id: "sign", name: "Sign", group: "Edit", shortDesc: "Place a drawn, typed or uploaded signature image on a page." },
+  { id: "compress", name: "Compress", group: "Convert & optimize", shortDesc: "Reduce file size without rasterising text. Shows the real before/after size." },
+  { id: "img-to-pdf", name: "Images to PDF", group: "Convert & optimize", ownInput: true, shortDesc: "Turn PNG, JPEG or WebP images into a PDF." },
+  { id: "pdf-to-img", name: "PDF to PNG", group: "Convert & optimize", shortDesc: "Render each page as a PNG image." },
+  { id: "protect", name: "Password protect", group: "Security", shortDesc: "Encrypt the PDF with AES-256 so it needs a password to open." },
+  { id: "ai-assistant", name: "AI insights", group: "AI", shortDesc: "Summarise, extract key details or ask questions using Google Gemini (server-side)." },
 ];
+
+export const TOOL_ICONS: Record<PdfToolCategory, LucideIcon> = {
+  merge: Combine,
+  split: Scissors,
+  reorder: LayoutGrid,
+  watermark: Stamp,
+  "page-numbers": Hash,
+  sign: PenLine,
+  compress: Minimize2,
+  "img-to-pdf": Image,
+  "pdf-to-img": FileImage,
+  protect: Lock,
+  "ai-assistant": Sparkles,
+};
+
+const GROUPS: ToolGroup[] = ["Organize", "Edit", "Convert & optimize", "Security", "AI"];
 
 interface ToolSelectorProps {
   activeTool: PdfToolCategory;
   onSelectTool: (tool: PdfToolCategory) => void;
 }
 
-export const ToolSelector: React.FC<ToolSelectorProps> = ({
-  activeTool,
-  onSelectTool,
-}) => {
-  const getIcon = (name: string) => {
-    switch (name) {
-      case "Combine":
-        return <Combine className="w-5 h-5" />;
-      case "Scissors":
-        return <Scissors className="w-5 h-5" />;
-      case "RotateCw":
-        return <RotateCw className="w-5 h-5" />;
-      case "Stamp":
-        return <Stamp className="w-5 h-5" />;
-      case "Hash":
-        return <Hash className="w-5 h-5" />;
-      case "Minimize2":
-        return <Minimize2 className="w-5 h-5" />;
-      case "FileSignature":
-        return <FileSignature className="w-5 h-5" />;
-      case "Image":
-        return <Image className="w-5 h-5" />;
-      case "FileImage":
-        return <FileImage className="w-5 h-5" />;
-      case "Lock":
-        return <Lock className="w-5 h-5" />;
-      case "Sparkles":
-        return <Sparkles className="w-5 h-5" />;
-      default:
-        return <Combine className="w-5 h-5" />;
-    }
-  };
-
-  return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-11 gap-2.5 mb-6">
-      {TOOLS.map((tool) => {
-        const isActive = activeTool === tool.id;
-        return (
-          <button
-            key={tool.id}
-            id={`btn-tool-${tool.id}`}
-            onClick={() => onSelectTool(tool.id)}
-            className={`group relative flex flex-col items-center justify-center p-3 rounded-xl border text-center transition-all duration-200 cursor-pointer ${
-              isActive
-                ? "bg-slate-900 text-white border-slate-900 shadow-md ring-2 ring-blue-500/30"
-                : "bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50 shadow-2xs"
-            }`}
-          >
-            {tool.badge && (
-              <span className="absolute -top-1 -right-1 px-1.5 py-0.2 text-[9px] font-bold tracking-wider uppercase rounded bg-blue-600 text-white shadow-xs">
-                {tool.badge}
-              </span>
-            )}
-            <div
-              className={`p-2 rounded-lg mb-1.5 transition-transform group-hover:scale-105 ${
-                isActive
-                  ? "bg-white/15 text-white"
-                  : `${tool.color} border`
-              }`}
-            >
-              {getIcon(tool.iconName)}
-            </div>
-            <span
-              className={`text-[10px] font-bold uppercase tracking-wider line-clamp-1 ${
-                isActive ? "text-white" : "text-slate-800"
-              }`}
-            >
-              {tool.name}
-            </span>
-          </button>
-        );
-      })}
-    </div>
-  );
-};
+export const ToolSelector: React.FC<ToolSelectorProps> = ({ activeTool, onSelectTool }) => (
+  <nav aria-label="PDF tools" className="space-y-5">
+    {GROUPS.map((group) => (
+      <div key={group}>
+        <h2 className="px-2 mb-1.5 text-xs font-medium uppercase tracking-wide text-slate-400">{group}</h2>
+        <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-1 gap-1">
+          {TOOLS.filter((t) => t.group === group).map((tool) => {
+            const Icon = TOOL_ICONS[tool.id];
+            const isActive = activeTool === tool.id;
+            return (
+              <li key={tool.id}>
+                <button
+                  type="button"
+                  id={`btn-tool-${tool.id}`}
+                  onClick={() => onSelectTool(tool.id)}
+                  aria-current={isActive ? "page" : undefined}
+                  className={cx(
+                    "w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm text-left transition-colors cursor-pointer",
+                    isActive
+                      ? "bg-blue-50 text-blue-700 font-medium"
+                      : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                  )}
+                >
+                  <Icon className={cx("w-4 h-4 shrink-0", isActive ? "text-blue-600" : "text-slate-400")} aria-hidden="true" />
+                  <span className="truncate">{tool.name}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    ))}
+  </nav>
+);

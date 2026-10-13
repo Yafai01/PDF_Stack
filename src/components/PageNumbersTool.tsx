@@ -1,16 +1,32 @@
 import React, { useState } from "react";
-import { Hash, Download, Loader2 } from "lucide-react";
+import { Hash } from "lucide-react";
 import type { PdfFileItem, PageNumberConfig } from "../types";
-import { addPageNumbersToPdf, downloadPdfBlob } from "../lib/pdfUtils";
+import { addPageNumbersToPdf, downloadPdfBlob, baseFileName, errorMessage, formatPageLabel } from "../lib/pdfUtils";
+import { ActionBar, Alert, Button, Label, Panel, PanelHeader, Section, Segmented, cx, inputClass } from "./ui";
 
 interface PageNumbersToolProps {
   fileItems: PdfFileItem[];
 }
 
+const FORMATS: { value: PageNumberConfig["format"]; label: string }[] = [
+  { value: "page_x_of_y", label: "Page 1 of 10" },
+  { value: "page_x", label: "Page 1" },
+  { value: "x_slash_y", label: "1 / 10" },
+  { value: "custom", label: "Custom" },
+];
+
+const POSITIONS: { value: PageNumberConfig["position"]; label: string; slot: string }[] = [
+  { value: "top-center", label: "Top center", slot: "col-start-2 row-start-1" },
+  { value: "top-right", label: "Top right", slot: "col-start-3 row-start-1" },
+  { value: "bottom-left", label: "Bottom left", slot: "col-start-1 row-start-3" },
+  { value: "bottom-center", label: "Bottom center", slot: "col-start-2 row-start-3" },
+  { value: "bottom-right", label: "Bottom right", slot: "col-start-3 row-start-3" },
+];
+
 export const PageNumbersTool: React.FC<PageNumbersToolProps> = ({ fileItems }) => {
   const activeFile = fileItems[0];
   const [isProcessing, setIsProcessing] = useState(false);
-
+  const [error, setError] = useState("");
   const [config, setConfig] = useState<PageNumberConfig>({
     position: "bottom-center",
     format: "page_x_of_y",
@@ -18,232 +34,143 @@ export const PageNumbersTool: React.FC<PageNumbersToolProps> = ({ fileItems }) =
     colorHex: "#334155",
     marginPt: 30,
     startFromPage: 1,
-    customText: "Document - Page {page} of {total}",
+    customText: "Page {page} of {total}",
   });
 
   if (!activeFile) return null;
 
-  const handleApplyPageNumbers = async () => {
+  const set = <K extends keyof PageNumberConfig>(key: K, value: PageNumberConfig[K]) =>
+    setConfig((prev) => ({ ...prev, [key]: value }));
+
+  const handleApply = async () => {
     setIsProcessing(true);
+    setError("");
     try {
       const bytes = await addPageNumbersToPdf(activeFile.arrayBuffer, config);
-      const baseName = activeFile.name.replace(/\.pdf$/i, "");
-      downloadPdfBlob(bytes, `${baseName}_Numbered.pdf`);
+      downloadPdfBlob(bytes, `${baseFileName(activeFile.name)}_numbered.pdf`);
     } catch (err) {
-      console.error("Page numbering failed:", err);
-      alert("Failed to add page numbers to PDF.");
+      setError(errorMessage(err, "Could not add page numbers."));
     } finally {
       setIsProcessing(false);
     }
   };
 
   return (
-    <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-xs mb-8">
-      <div className="pb-4 border-b border-slate-100 mb-5">
-        <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
-          <Hash className="w-5 h-5 text-cyan-600" /> Add Page Numbers & Footers
-        </h2>
-        <p className="text-xs text-slate-500 mt-0.5">
-          Insert automated page numbers, headers, or footers across your document.
-        </p>
-      </div>
+    <Panel>
+      <PanelHeader
+        title="Page number settings"
+        description={
+          <>
+            Preview: <span className="font-medium text-slate-700">{formatPageLabel(config, config.startFromPage, activeFile.pageCount)}</span>
+          </>
+        }
+      />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        {/* Left Column: Numbering Format & Text */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-4">
-          <div className="bg-slate-50 border border-slate-200/80 p-4 rounded-xl space-y-3">
-            <label className="text-xs font-semibold text-slate-800 block">Number Format:</label>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              {[
-                { id: "page_x_of_y", label: "Page 1 of 10" },
-                { id: "page_x", label: "Page 1" },
-                { id: "x_slash_y", label: "1 / 10" },
-                { id: "custom", label: "Custom Format" },
-              ].map((fmt) => (
-                <button
-                  key={fmt.id}
-                  onClick={() => setConfig((prev) => ({ ...prev, format: fmt.id as any }))}
-                  id={`btn-number-format-${fmt.id}`}
-                  className={`py-2 px-3 rounded-lg border text-left font-medium transition-all cursor-pointer ${
-                    config.format === fmt.id
-                      ? "bg-cyan-50 border-cyan-500 text-cyan-800 font-semibold shadow-2xs"
-                      : "bg-white border-slate-200 text-slate-700 hover:bg-slate-100"
-                  }`}
-                >
-                  {fmt.label}
-                </button>
-              ))}
-            </div>
-
+          <Section title="Format">
+            <Segmented label="Number format" value={config.format} onChange={(v) => set("format", v)} options={FORMATS} />
             {config.format === "custom" && (
-              <div className="pt-2">
-                <label className="text-[11px] font-medium text-slate-600 block mb-1">
-                  Custom Pattern (Use &#123;page&#125; and &#123;total&#125;):
-                </label>
+              <div className="mt-3">
+                <Label htmlFor="input-custom-pagenum-pattern">Pattern</Label>
                 <input
+                  id="input-custom-pagenum-pattern"
                   type="text"
                   value={config.customText || ""}
-                  onChange={(e) => setConfig((prev) => ({ ...prev, customText: e.target.value }))}
-                  id="input-custom-pagenum-pattern"
-                  className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500"
+                  onChange={(e) => set("customText", e.target.value)}
+                  className={inputClass}
                 />
+                <p className="text-xs text-slate-500 mt-1">
+                  Use {"{page}"} and {"{total}"} as placeholders. Latin characters only.
+                </p>
               </div>
             )}
-          </div>
+          </Section>
 
-          <div className="bg-slate-50 border border-slate-200/80 p-4 rounded-xl space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+          <Section>
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
-                  Font Size ({config.fontSize}pt):
-                </label>
+                <Label htmlFor="slider-pagenum-fontsize">Font size: {config.fontSize} pt</Label>
                 <input
+                  id="slider-pagenum-fontsize"
                   type="range"
                   min="8"
                   max="24"
                   value={config.fontSize}
-                  onChange={(e) =>
-                    setConfig((prev) => ({ ...prev, fontSize: parseInt(e.target.value) }))
-                  }
-                  id="slider-pagenum-fontsize"
-                  className="w-full accent-cyan-600 cursor-pointer"
+                  onChange={(e) => set("fontSize", parseInt(e.target.value, 10))}
+                  className="w-full accent-blue-600"
                 />
               </div>
-
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">Font Color:</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={config.colorHex}
-                    onChange={(e) => setConfig((prev) => ({ ...prev, colorHex: e.target.value }))}
-                    id="input-pagenum-color"
-                    className="w-8 h-8 rounded border border-slate-300 cursor-pointer p-0"
-                  />
-                  <span className="text-xs font-mono text-slate-600">{config.colorHex}</span>
-                </div>
+                <Label htmlFor="input-pagenum-color">Colour</Label>
+                <input
+                  id="input-pagenum-color"
+                  type="color"
+                  value={config.colorHex}
+                  onChange={(e) => set("colorHex", e.target.value)}
+                  className="w-9 h-9 rounded border border-slate-300 cursor-pointer p-0.5 bg-white"
+                />
               </div>
             </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
-                Start Numbering From Page:
-              </label>
+            <div className="mt-4">
+              <Label htmlFor="input-start-from-page">Start numbering at page</Label>
               <input
+                id="input-start-from-page"
                 type="number"
-                min="1"
+                min={1}
                 max={activeFile.pageCount}
                 value={config.startFromPage}
                 onChange={(e) =>
-                  setConfig((prev) => ({
-                    ...prev,
-                    startFromPage: Math.max(1, parseInt(e.target.value) || 1),
-                  }))
+                  set("startFromPage", Math.min(activeFile.pageCount, Math.max(1, parseInt(e.target.value, 10) || 1)))
                 }
-                id="input-start-from-page"
-                className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-300 bg-white font-semibold text-slate-800"
+                className={cx(inputClass, "max-w-[8rem]")}
               />
-              <p className="text-[10px] text-slate-400 mt-1">Useful to skip cover pages or titles.</p>
+              <p className="text-xs text-slate-500 mt-1">Earlier pages (for example a cover) are left unnumbered.</p>
             </div>
-          </div>
+          </Section>
         </div>
 
-        {/* Right Column: Position Presets & Live Box */}
-        <div className="space-y-4 flex flex-col justify-between">
-          <div className="bg-slate-50 border border-slate-200/80 p-4 rounded-xl space-y-3">
-            <label className="text-xs font-semibold text-slate-800 block">Position Placement:</label>
-
-            {/* Visual 2D Document Grid */}
-            <div className="aspect-[4/3] bg-white border-2 border-dashed border-slate-300 rounded-xl relative p-4 flex flex-col justify-between">
-              {/* Top Row */}
-              <div className="flex justify-between items-center">
-                <button
-                  onClick={() => setConfig((prev) => ({ ...prev, position: "top-center" }))}
-                  id="btn-pos-top-center"
-                  className={`mx-auto text-[10px] font-semibold px-2 py-1 rounded transition-all cursor-pointer ${
-                    config.position === "top-center"
-                      ? "bg-cyan-600 text-white shadow-xs"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  }`}
-                >
-                  Top Center
-                </button>
-                <button
-                  onClick={() => setConfig((prev) => ({ ...prev, position: "top-right" }))}
-                  id="btn-pos-top-right"
-                  className={`text-[10px] font-semibold px-2 py-1 rounded transition-all cursor-pointer ${
-                    config.position === "top-right"
-                      ? "bg-cyan-600 text-white shadow-xs"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  }`}
-                >
-                  Top Right
-                </button>
-              </div>
-
-              <div className="text-center text-xs text-slate-400 font-mono">
-                DOCUMENT BODY PREVIEW
-              </div>
-
-              {/* Bottom Row */}
-              <div className="flex justify-between items-center">
-                <button
-                  onClick={() => setConfig((prev) => ({ ...prev, position: "bottom-left" }))}
-                  id="btn-pos-bottom-left"
-                  className={`text-[10px] font-semibold px-2 py-1 rounded transition-all cursor-pointer ${
-                    config.position === "bottom-left"
-                      ? "bg-cyan-600 text-white shadow-xs"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  }`}
-                >
-                  Bottom Left
-                </button>
-                <button
-                  onClick={() => setConfig((prev) => ({ ...prev, position: "bottom-center" }))}
-                  id="btn-pos-bottom-center"
-                  className={`text-[10px] font-semibold px-2 py-1 rounded transition-all cursor-pointer ${
-                    config.position === "bottom-center"
-                      ? "bg-cyan-600 text-white shadow-xs"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  }`}
-                >
-                  Bottom Center
-                </button>
-                <button
-                  onClick={() => setConfig((prev) => ({ ...prev, position: "bottom-right" }))}
-                  id="btn-pos-bottom-right"
-                  className={`text-[10px] font-semibold px-2 py-1 rounded transition-all cursor-pointer ${
-                    config.position === "bottom-right"
-                      ? "bg-cyan-600 text-white shadow-xs"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  }`}
-                >
-                  Bottom Right
-                </button>
-              </div>
-            </div>
+        <Section title="Position">
+          <div className="grid grid-cols-3 grid-rows-3 gap-2 aspect-[4/3] rounded-lg border border-dashed border-slate-300 bg-white p-3">
+            {POSITIONS.map((pos) => (
+              <button
+                type="button"
+                key={pos.value}
+                onClick={() => set("position", pos.value)}
+                aria-pressed={config.position === pos.value}
+                id={`btn-pos-${pos.value}`}
+                className={cx(
+                  pos.slot,
+                  "self-center rounded-md px-2 py-1.5 text-xs transition-colors cursor-pointer",
+                  config.position === pos.value
+                    ? "bg-blue-600 text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                )}
+              >
+                {pos.label}
+              </button>
+            ))}
           </div>
-        </div>
+        </Section>
       </div>
 
-      <div className="pt-4 border-t border-slate-100 flex justify-end">
-        <button
-          onClick={handleApplyPageNumbers}
-          disabled={isProcessing}
+      {error && (
+        <Alert tone="error" className="mt-4">
+          {error}
+        </Alert>
+      )}
+
+      <ActionBar>
+        <Button
+          variant="primary"
+          onClick={handleApply}
+          loading={isProcessing}
+          icon={<Hash className="w-4 h-4" aria-hidden="true" />}
           id="btn-execute-pagenumbers"
-          className="px-5 py-2.5 rounded-xl bg-cyan-600 text-white text-xs font-semibold shadow-sm hover:bg-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 cursor-pointer"
         >
-          {isProcessing ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" /> Numbering Document...
-            </>
-          ) : (
-            <>
-              <Download className="w-4 h-4" /> Add Numbers & Download PDF
-            </>
-          )}
-        </button>
-      </div>
-    </div>
+          {isProcessing ? "Numbering" : "Add numbers and download"}
+        </Button>
+      </ActionBar>
+    </Panel>
   );
 };
