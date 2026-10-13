@@ -1,220 +1,166 @@
-import React, { useState } from "react";
-import { Scissors, Download, CheckSquare, Square, Loader2, AlertCircle } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { Check, Scissors } from "lucide-react";
 import type { PdfFileItem } from "../types";
-import { splitPdf, downloadPdfBlob, parsePageRanges } from "../lib/pdfUtils";
+import { splitPdf, downloadPdfBlob, parsePageRanges, baseFileName, errorMessage } from "../lib/pdfUtils";
+import { ActionBar, Alert, Button, Label, Panel, PanelHeader, Segmented, cx, inputClass } from "./ui";
 
 interface SplitToolProps {
   fileItems: PdfFileItem[];
 }
 
 export const SplitTool: React.FC<SplitToolProps> = ({ fileItems }) => {
-  const activeFile = fileItems[0]; // Primary active file
-  const [rangeInput, setRangeInput] = useState("1-3");
-  const [splitMode, setSplitMode] = useState<"range" | "single_pages">("range");
+  const activeFile = fileItems[0];
+  const [rangeInput, setRangeInput] = useState("");
+  const [mode, setMode] = useState<"range" | "select">("range");
   const [selectedPages, setSelectedPages] = useState<number[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setSelectedPages([]);
+    setError("");
+  }, [activeFile?.id]);
 
   if (!activeFile) return null;
 
-  const togglePageSelection = (pageNum: number) => {
-    setSelectedPages((prev) =>
-      prev.includes(pageNum) ? prev.filter((p) => p !== pageNum) : [...prev, pageNum]
-    );
-  };
+  const togglePage = (pageNum: number) =>
+    setSelectedPages((prev) => (prev.includes(pageNum) ? prev.filter((p) => p !== pageNum) : [...prev, pageNum]));
 
-  const handleSelectAll = () => {
-    if (selectedPages.length === activeFile.pageCount) {
-      setSelectedPages([]);
-    } else {
-      setSelectedPages(Array.from({ length: activeFile.pageCount }, (_, i) => i + 1));
-    }
-  };
+  const allSelected = selectedPages.length === activeFile.pageCount;
+  const rangeMatches = parsePageRanges(rangeInput, activeFile.pageCount).length;
 
   const handleSplit = async () => {
-    setErrorMessage("");
+    setError("");
+    const finalRange = mode === "select" ? [...selectedPages].sort((a, b) => a - b).join(",") : rangeInput.trim();
+    if (!finalRange) {
+      setError(mode === "select" ? "Select at least one page." : "Enter a page range, for example 1-3, 5.");
+      return;
+    }
     setIsProcessing(true);
-
     try {
-      let finalRange = "";
-      if (splitMode === "single_pages") {
-        if (selectedPages.length === 0) {
-          setErrorMessage("Please click to select at least one page to extract.");
-          setIsProcessing(false);
-          return;
-        }
-        finalRange = selectedPages.sort((a, b) => a - b).join(",");
-      } else {
-        finalRange = rangeInput.trim();
-        if (!finalRange) {
-          setErrorMessage("Please enter a valid page range (e.g. 1-3, 5).");
-          setIsProcessing(false);
-          return;
-        }
-      }
-
       const { blob, pageCount } = await splitPdf(activeFile.arrayBuffer, finalRange);
       if (pageCount === 0) {
-        setErrorMessage("No valid pages were found in the specified range.");
-        setIsProcessing(false);
+        setError(`No pages match. This document has ${activeFile.pageCount} page(s).`);
         return;
       }
-
-      const baseName = activeFile.name.replace(/\.pdf$/i, "");
-      downloadPdfBlob(blob, `${baseName}_Split.pdf`);
-    } catch (err: any) {
-      console.error("Failed to split PDF:", err);
-      setErrorMessage(err?.message || "Failed to split PDF document.");
+      downloadPdfBlob(blob, `${baseFileName(activeFile.name)}_pages.pdf`);
+    } catch (err) {
+      setError(errorMessage(err, "Could not split this PDF."));
     } finally {
       setIsProcessing(false);
     }
   };
 
   return (
-    <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-xs mb-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 mb-5 gap-3">
-        <div>
-          <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
-            <Scissors className="w-5 h-5 text-emerald-600" /> Split & Extract Pages
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Document: <span className="font-semibold text-slate-700">{activeFile.name}</span> ({activeFile.pageCount} total pages)
-          </p>
-        </div>
+    <Panel>
+      <PanelHeader
+        title="Choose pages"
+        description={
+          <>
+            <span className="font-medium text-slate-700">{activeFile.name}</span> · {activeFile.pageCount} pages
+          </>
+        }
+        actions={
+          <Segmented
+            label="Selection mode"
+            value={mode}
+            onChange={setMode}
+            options={[
+              { value: "range", label: "Page range" },
+              { value: "select", label: "Pick pages" },
+            ]}
+          />
+        }
+      />
 
-        {/* Split Mode Switcher */}
-        <div className="inline-flex p-1 bg-slate-100 rounded-xl text-xs font-medium self-start sm:self-auto">
-          <button
-            onClick={() => setSplitMode("range")}
-            id="btn-split-mode-range"
-            className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-              splitMode === "range" ? "bg-white text-slate-900 shadow-xs font-semibold" : "text-slate-600"
-            }`}
-          >
-            By Custom Range
-          </button>
-          <button
-            onClick={() => setSplitMode("single_pages")}
-            id="btn-split-mode-single"
-            className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-              splitMode === "single_pages" ? "bg-white text-slate-900 shadow-xs font-semibold" : "text-slate-600"
-            }`}
-          >
-            Visual Selection
-          </button>
-        </div>
-      </div>
-
-      {splitMode === "range" ? (
-        <div className="mb-6 bg-slate-50 border border-slate-200/80 p-4 rounded-xl space-y-3">
-          <label className="text-xs font-semibold text-slate-800 block">Enter Page Ranges to Extract:</label>
-          <div className="flex items-center gap-3">
-            <input
-              type="text"
-              value={rangeInput}
-              onChange={(e) => setRangeInput(e.target.value)}
-              placeholder="e.g. 1-2, 5, 7-10"
-              id="input-split-range"
-              className="flex-1 px-3.5 py-2 text-xs rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-mono text-slate-800"
-            />
-            <span className="text-xs text-slate-500 font-medium whitespace-nowrap">
-              Matches: {parsePageRanges(rangeInput, activeFile.pageCount).length} pages
-            </span>
-          </div>
-          <p className="text-[11px] text-slate-500">
-            Tip: Use commas to separate ranges or pages (e.g. <span className="font-mono text-slate-700">1-3, 5, 8-12</span>).
+      {mode === "range" ? (
+        <div className="max-w-md">
+          <Label htmlFor="input-split-range">Pages to extract</Label>
+          <input
+            id="input-split-range"
+            type="text"
+            value={rangeInput}
+            onChange={(e) => setRangeInput(e.target.value)}
+            placeholder="e.g. 1-2, 5, 7-10"
+            aria-describedby="split-range-help"
+            className={inputClass}
+          />
+          <p id="split-range-help" className="text-xs text-slate-500 mt-1.5">
+            Separate pages and ranges with commas. {rangeInput.trim() && `${rangeMatches} page(s) match.`}
           </p>
         </div>
       ) : (
-        <div className="mb-6">
+        <div>
           <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-semibold text-slate-700">
-              Selected ({selectedPages.length} of {activeFile.pageCount} pages)
+            <span className="text-sm text-slate-600">
+              {selectedPages.length} of {activeFile.pageCount} selected
             </span>
-            <button
-              onClick={handleSelectAll}
-              id="btn-select-all-split"
-              className="text-xs font-medium text-emerald-600 hover:text-emerald-700 transition-colors cursor-pointer flex items-center gap-1"
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() =>
+                setSelectedPages(allSelected ? [] : Array.from({ length: activeFile.pageCount }, (_, i) => i + 1))
+              }
             >
-              {selectedPages.length === activeFile.pageCount ? (
-                <>
-                  <CheckSquare className="w-3.5 h-3.5" /> Deselect All
-                </>
-              ) : (
-                <>
-                  <Square className="w-3.5 h-3.5" /> Select All Pages
-                </>
-              )}
-            </button>
+              {allSelected ? "Clear selection" : "Select all"}
+            </Button>
           </div>
 
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3 max-h-80 overflow-y-auto p-1">
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3 max-h-96 overflow-y-auto p-1">
             {Array.from({ length: activeFile.pageCount }, (_, i) => i + 1).map((pageNum) => {
               const isSelected = selectedPages.includes(pageNum);
               const thumbUrl = activeFile.pageThumbnails[pageNum - 1];
-
               return (
-                <div
+                <button
+                  type="button"
                   key={pageNum}
-                  onClick={() => togglePageSelection(pageNum)}
-                  className={`group relative aspect-[3/4] border-2 rounded-xl p-1.5 cursor-pointer flex flex-col justify-between transition-all ${
-                    isSelected
-                      ? "border-emerald-600 bg-emerald-50/50 ring-2 ring-emerald-500/20"
-                      : "border-slate-200 bg-white hover:border-slate-300"
-                  }`}
+                  onClick={() => togglePage(pageNum)}
+                  aria-pressed={isSelected}
+                  aria-label={`Page ${pageNum}`}
+                  className={cx(
+                    "relative rounded-lg border-2 p-1.5 bg-white text-left cursor-pointer transition-colors",
+                    isSelected ? "border-blue-600" : "border-slate-200 hover:border-slate-300"
+                  )}
                 >
-                  <div className="flex justify-between items-center text-[10px] font-mono font-bold text-slate-600 z-10 px-1 pt-0.5">
-                    <span>Page {pageNum}</span>
-                    {isSelected ? (
-                      <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
-                    ) : (
-                      <Square className="w-3.5 h-3.5 text-slate-300 group-hover:text-slate-400" />
-                    )}
-                  </div>
-
                   {thumbUrl ? (
-                    <img
-                      src={thumbUrl}
-                      alt={`Page ${pageNum}`}
-                      className="w-full h-28 object-contain my-auto rounded border border-slate-100"
-                    />
+                    <img src={thumbUrl} alt="" className="w-full h-28 object-contain" />
                   ) : (
-                    <div className="w-full h-28 bg-slate-100 rounded flex items-center justify-center text-[10px] text-slate-400 font-mono">
-                      Page {pageNum}
+                    <div className="w-full h-28 bg-slate-100 rounded flex items-center justify-center text-xs text-slate-400">
+                      No preview
                     </div>
                   )}
-                </div>
+                  <span className="mt-1 flex items-center justify-between text-xs text-slate-600">
+                    {pageNum}
+                    {isSelected && (
+                      <span className="w-4 h-4 rounded-full bg-blue-600 text-white flex items-center justify-center">
+                        <Check className="w-3 h-3" aria-hidden="true" />
+                      </span>
+                    )}
+                  </span>
+                </button>
               );
             })}
           </div>
         </div>
       )}
 
-      {errorMessage && (
-        <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 shrink-0" />
-          <span>{errorMessage}</span>
-        </div>
+      {error && (
+        <Alert tone="error" className="mt-4">
+          {error}
+        </Alert>
       )}
 
-      <div className="pt-4 border-t border-slate-100 flex justify-end">
-        <button
+      <ActionBar>
+        <Button
+          variant="primary"
           onClick={handleSplit}
-          disabled={isProcessing}
+          loading={isProcessing}
+          icon={<Scissors className="w-4 h-4" aria-hidden="true" />}
           id="btn-execute-split"
-          className="px-5 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-semibold shadow-sm hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 cursor-pointer"
         >
-          {isProcessing ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" /> Extracting Pages...
-            </>
-          ) : (
-            <>
-              <Download className="w-4 h-4" /> Split & Download PDF
-            </>
-          )}
-        </button>
-      </div>
-    </div>
+          {isProcessing ? "Extracting" : "Extract and download"}
+        </Button>
+      </ActionBar>
+    </Panel>
   );
 };

@@ -11,13 +11,17 @@ export type PdfToolCategory =
   | "protect"
   | "ai-assistant";
 
+export type ToolGroup = "Organize" | "Edit" | "Convert & optimize" | "Security" | "AI";
+
 export interface ToolMeta {
   id: PdfToolCategory;
   name: string;
   shortDesc: string;
-  iconName: string;
-  badge?: string;
-  color: string;
+  group: ToolGroup;
+  /** Works on several uploaded PDFs at once. */
+  multiFile?: boolean;
+  /** Takes its own (non-PDF) input instead of the shared PDF upload. */
+  ownInput?: boolean;
 }
 
 export interface PdfFileItem {

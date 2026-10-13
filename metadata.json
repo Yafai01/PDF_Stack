@@ -1,6 +1,6 @@
 {
-  "name": "PDF Tool",
-  "description": "Comprehensive PDF toolkit for merging, splitting, rotating, watermarking, compressing, page reordering, image conversion, digital signatures, and AI document analysis.",
+  "name": "PDF Stack",
+  "description": "Comprehensive PDF toolkit for merging, splitting, rotating, watermarking, compressing, page reordering, image conversion, signature placement, password protection, and AI document analysis.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
