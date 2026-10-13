@@ -1,17 +1,26 @@
 import React, { useState } from "react";
-import { Lock, Download, ShieldCheck, Key, Loader2, Check } from "lucide-react";
+import { Lock } from "lucide-react";
 import type { PdfFileItem, ProtectConfig } from "../types";
-import { PDFDocument } from "pdf-lib";
-import { downloadPdfBlob } from "../lib/pdfUtils";
+import { encryptPdf } from "../lib/pdfSecurity";
+import { baseFileName, downloadPdfBlob, errorMessage } from "../lib/pdfUtils";
+import { ActionBar, Alert, Button, Label, Panel, PanelHeader, Section, inputClass } from "./ui";
 
 interface ProtectToolProps {
   fileItems: PdfFileItem[];
 }
 
+const PERMISSIONS: { key: "allowPrinting" | "allowCopying" | "allowModifying"; label: string }[] = [
+  { key: "allowPrinting", label: "Allow printing" },
+  { key: "allowCopying", label: "Allow copying text and images" },
+  { key: "allowModifying", label: "Allow editing, annotations and form filling" },
+];
+
 export const ProtectTool: React.FC<ProtectToolProps> = ({ fileItems }) => {
   const activeFile = fileItems[0];
   const [isProcessing, setIsProcessing] = useState(false);
-
+  const [error, setError] = useState("");
+  const [doneName, setDoneName] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [config, setConfig] = useState<ProtectConfig>({
     userPassword: "",
     ownerPassword: "",
@@ -22,125 +31,136 @@ export const ProtectTool: React.FC<ProtectToolProps> = ({ fileItems }) => {
 
   if (!activeFile) return null;
 
+  const mismatch = confirmPassword.length > 0 && confirmPassword !== config.userPassword;
+  const ownerSameAsUser = Boolean(config.ownerPassword) && config.ownerPassword === config.userPassword;
+  const canSubmit = Boolean(config.userPassword) && confirmPassword === config.userPassword && !ownerSameAsUser;
+
   const handleProtectPdf = async () => {
-    if (!config.userPassword) {
-      alert("Please enter a user password to encrypt the document.");
-      return;
-    }
+    if (!canSubmit) return;
     setIsProcessing(true);
-
+    setError("");
+    setDoneName("");
     try {
-      const pdfDoc = await PDFDocument.load(activeFile.arrayBuffer, { ignoreEncryption: true });
-
-      // Note: Encryption settings in pdf-lib safely save document structure
-      const encryptedBytes = await pdfDoc.save();
-      const baseName = activeFile.name.replace(/\.pdf$/i, "");
-      downloadPdfBlob(encryptedBytes, `${baseName}_Protected.pdf`);
+      const encryptedBytes = await encryptPdf(activeFile.arrayBuffer, config);
+      const name = `${baseFileName(activeFile.name)}_protected.pdf`;
+      downloadPdfBlob(encryptedBytes, name);
+      setDoneName(name);
     } catch (err) {
-      console.error("Failed to protect PDF:", err);
-      alert("Failed to apply security encryption to PDF.");
+      setError(errorMessage(err, "Could not encrypt this PDF."));
     } finally {
       setIsProcessing(false);
     }
   };
 
   return (
-    <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-xs mb-8">
-      <div className="pb-4 border-b border-slate-100 mb-5">
-        <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
-          <Lock className="w-5 h-5 text-slate-800" /> Password Protect & Security Settings
-        </h2>
-        <p className="text-xs text-slate-500 mt-0.5">
-          Encrypt your PDF document and restrict printing, copying, or modifications.
-        </p>
-      </div>
+    <Panel>
+      <PanelHeader
+        title="Password protection"
+        description={
+          <>
+            Encrypts <span className="font-medium text-slate-700">{activeFile.name}</span> with AES-256 in your
+            browser. The password is never sent anywhere.
+          </>
+        }
+      />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        {/* Passwords */}
-        <div className="space-y-4 bg-slate-50 border border-slate-200/80 p-4 rounded-xl">
-          <h3 className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
-            <Key className="w-4 h-4 text-slate-600" /> Document Passwords
-          </h3>
-
-          <div>
-            <label className="text-xs font-medium text-slate-700 block mb-1">
-              User Password (Required to Open):
-            </label>
-            <input
-              type="password"
-              value={config.userPassword}
-              onChange={(e) => setConfig((prev) => ({ ...prev, userPassword: e.target.value }))}
-              placeholder="e.g. Secret123!"
-              id="input-user-password"
-              className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white font-mono text-slate-800"
-            />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Section title="Passwords">
+          <div className="space-y-3">
+            <div>
+              <Label htmlFor="input-user-password">Password to open the PDF</Label>
+              <input
+                id="input-user-password"
+                type="password"
+                autoComplete="new-password"
+                value={config.userPassword}
+                onChange={(e) => setConfig((prev) => ({ ...prev, userPassword: e.target.value }))}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <Label htmlFor="input-confirm-password">Confirm password</Label>
+              <input
+                id="input-confirm-password"
+                type="password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                aria-invalid={mismatch}
+                aria-describedby={mismatch ? "password-mismatch" : undefined}
+                className={inputClass}
+              />
+              {mismatch && (
+                <p id="password-mismatch" className="text-xs text-red-700 mt-1">
+                  Passwords do not match.
+                </p>
+              )}
+            </div>
+            <div>
+              <Label htmlFor="input-owner-password">Owner password (optional)</Label>
+              <input
+                id="input-owner-password"
+                type="password"
+                autoComplete="new-password"
+                value={config.ownerPassword}
+                onChange={(e) => setConfig((prev) => ({ ...prev, ownerPassword: e.target.value }))}
+                aria-describedby="owner-password-help"
+                className={inputClass}
+              />
+              <p id="owner-password-help" className="text-xs text-slate-500 mt-1">
+                Lifts the restrictions below. Must differ from the open password. If left empty, a random one is
+                generated and the restrictions cannot be lifted later.
+              </p>
+              {ownerSameAsUser && (
+                <p className="text-xs text-red-700 mt-1">The owner password must be different from the open password.</p>
+              )}
+            </div>
           </div>
+        </Section>
 
-          <div>
-            <label className="text-xs font-medium text-slate-700 block mb-1">
-              Owner Password (Optional for Permissions):
-            </label>
-            <input
-              type="password"
-              value={config.ownerPassword}
-              onChange={(e) => setConfig((prev) => ({ ...prev, ownerPassword: e.target.value }))}
-              placeholder="e.g. MasterKey99"
-              id="input-owner-password"
-              className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white font-mono text-slate-800"
-            />
-          </div>
-        </div>
-
-        {/* Permissions */}
-        <div className="space-y-4 bg-slate-50 border border-slate-200/80 p-4 rounded-xl">
-          <h3 className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
-            <ShieldCheck className="w-4 h-4 text-slate-600" /> Restrict Permissions
-          </h3>
-
+        <Section title="Permissions after opening">
           <div className="space-y-2.5">
-            {[
-              { id: "allowPrinting", label: "Allow Printing Document", key: "allowPrinting" },
-              { id: "allowCopying", label: "Allow Content Copying", key: "allowCopying" },
-              { id: "allowModifying", label: "Allow Document Modification", key: "allowModifying" },
-            ].map((perm) => (
-              <label
-                key={perm.id}
-                className="flex items-center gap-2.5 text-xs text-slate-700 cursor-pointer select-none"
-              >
+            {PERMISSIONS.map((perm) => (
+              <label key={perm.key} className="flex items-center gap-2.5 text-sm text-slate-700 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={(config as any)[perm.key]}
-                  onChange={(e) =>
-                    setConfig((prev) => ({ ...prev, [perm.key]: e.target.checked }))
-                  }
-                  id={`chk-permission-${perm.id}`}
-                  className="rounded text-slate-900 focus:ring-slate-800 w-4 h-4 cursor-pointer"
+                  checked={config[perm.key]}
+                  onChange={(e) => setConfig((prev) => ({ ...prev, [perm.key]: e.target.checked }))}
+                  id={`chk-permission-${perm.key}`}
+                  className="w-4 h-4 accent-blue-600"
                 />
-                <span>{perm.label}</span>
+                {perm.label}
               </label>
             ))}
           </div>
-        </div>
+          <p className="text-xs text-slate-500 mt-4">
+            Permission flags are honoured by mainstream PDF readers but are advisory: anyone who can open the file can
+            in principle bypass them with specialised tools. The open password itself is real encryption.
+          </p>
+        </Section>
       </div>
 
-      <div className="pt-4 border-t border-slate-100 flex justify-end">
-        <button
-          onClick={handleProtectPdf}
-          disabled={isProcessing || !config.userPassword}
-          id="btn-execute-protect"
-          className="px-5 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-semibold shadow-sm hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 cursor-pointer"
-        >
-          {isProcessing ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" /> Encrypting PDF...
-            </>
-          ) : (
-            <>
-              <Download className="w-4 h-4" /> Encrypt & Download Protected PDF
-            </>
-          )}
-        </button>
+      <div className="mt-4 space-y-3">
+        {error && <Alert tone="error">{error}</Alert>}
+        {doneName && (
+          <Alert tone="success">
+            Downloaded <span className="font-medium">{doneName}</span>. Keep the password safe: it cannot be recovered.
+          </Alert>
+        )}
       </div>
-    </div>
+
+      <ActionBar>
+        <Button
+          variant="primary"
+          onClick={handleProtectPdf}
+          disabled={!canSubmit}
+          loading={isProcessing}
+          icon={<Lock className="w-4 h-4" aria-hidden="true" />}
+          id="btn-execute-protect"
+        >
+          {isProcessing ? "Encrypting" : "Encrypt and download"}
+        </Button>
+      </ActionBar>
+    </Panel>
   );
 };
