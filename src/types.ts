@@ -8,7 +8,6 @@ export type PdfToolCategory =
   | "sign"
   | "img-to-pdf"
   | "pdf-to-img"
-  | "protect"
   | "ai-assistant";
 
 export interface ToolMeta {
@@ -80,14 +79,6 @@ export interface ImageToPdfConfig {
   orientation: "portrait" | "landscape" | "auto";
   marginPt: number; // 0, 10, 20, 36
   fitMode: "contain" | "stretch";
-}
-
-export interface ProtectConfig {
-  userPassword: string;
-  ownerPassword?: string;
-  allowPrinting: boolean;
-  allowCopying: boolean;
-  allowModifying: boolean;
 }
 
 export interface AiDocMetadata {

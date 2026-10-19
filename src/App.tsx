@@ -20,7 +20,6 @@ import { CompressTool } from "./components/CompressTool";
 import { SignTool } from "./components/SignTool";
 import { ImagesToPdfTool } from "./components/ImagesToPdfTool";
 import { PdfToImagesTool } from "./components/PdfToImagesTool";
-import { ProtectTool } from "./components/ProtectTool";
 import { AiAssistantTool } from "./components/AiAssistantTool";
 
 export default function App() {
@@ -75,7 +74,7 @@ export default function App() {
 
             <div className="flex items-center gap-3 border-l border-slate-800 pl-4 sm:pl-6">
               <div className="hidden sm:flex items-center gap-1 text-[11px] text-emerald-400 font-medium bg-slate-800/80 px-2.5 py-1 rounded border border-slate-700">
-                <ShieldCheck className="w-3.5 h-3.5" /> Client Security Active
+                <ShieldCheck className="w-3.5 h-3.5" /> Runs In Your Browser
               </div>
               <button
                 id="btn-pro-badge"
@@ -97,7 +96,7 @@ export default function App() {
               Select PDF Utility
             </h2>
             <span className="text-xs text-slate-500 font-medium">
-              11 Powerful PDF Tools
+              10 Powerful PDF Tools
             </span>
           </div>
 
@@ -168,7 +167,6 @@ export default function App() {
             {activeTool === "sign" && <SignTool fileItems={fileItems} />}
             {activeTool === "img-to-pdf" && <ImagesToPdfTool />}
             {activeTool === "pdf-to-img" && <PdfToImagesTool fileItems={fileItems} />}
-            {activeTool === "protect" && <ProtectTool fileItems={fileItems} />}
             {activeTool === "ai-assistant" && <AiAssistantTool fileItems={fileItems} />}
           </div>
         ) : (

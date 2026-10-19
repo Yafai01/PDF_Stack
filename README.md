@@ -18,7 +18,6 @@ PDF Stack is a set of PDF tools that runs in the browser, built with **pdf-lib**
 - **Sign**: draw, type or upload a signature and place it on a page.
 - **Images to PDF**: combine PNG, JPG and WebP images into one PDF.
 - **PDF to PNG**: render pages as PNG images.
-- **Protect (work in progress)**: the screen for passwords and permissions is built, but files are not encrypted yet. The current code only re-saves the document, because pdf-lib can't encrypt files.
 - **AI assistant (Gemini)**:
   - a summary with key takeaways,
   - structured details as JSON (title, category, dates, parties, financial figures, action items, topics),

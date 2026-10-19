@@ -9,7 +9,6 @@ import {
   FileSignature,
   Image,
   FileImage,
-  Lock,
   Sparkles,
 } from "lucide-react";
 import type { PdfToolCategory, ToolMeta } from "../types";
@@ -79,13 +78,6 @@ export const TOOLS: ToolMeta[] = [
     color: "bg-teal-50 text-teal-600 border-teal-100",
   },
   {
-    id: "protect",
-    name: "Encrypt",
-    shortDesc: "Set password security and document restriction.",
-    iconName: "Lock",
-    color: "bg-slate-100 text-slate-700 border-slate-200",
-  },
-  {
     id: "ai-assistant",
     name: "AI Insights",
     shortDesc: "Summarize, extract key data, or ask questions with AI.",
@@ -124,8 +116,6 @@ export const ToolSelector: React.FC<ToolSelectorProps> = ({
         return <Image className="w-5 h-5" />;
       case "FileImage":
         return <FileImage className="w-5 h-5" />;
-      case "Lock":
-        return <Lock className="w-5 h-5" />;
       case "Sparkles":
         return <Sparkles className="w-5 h-5" />;
       default:
@@ -134,7 +124,7 @@ export const ToolSelector: React.FC<ToolSelectorProps> = ({
   };
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-11 gap-2.5 mb-6">
+    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-10 gap-2.5 mb-6">
       {TOOLS.map((tool) => {
         const isActive = activeTool === tool.id;
         return (
